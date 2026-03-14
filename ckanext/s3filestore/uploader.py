@@ -296,6 +296,10 @@ class S3ResourceUploader(BaseS3Uploader):
         self.filename = None
         self.old_filename = None
 
+        # Keep a copy of the existing resource URL/filename so get_path(id)
+        # can infer the filename during downloads (CKAN 2.11 calls get_path(id))
+        self.url = resource.get('url', '')
+
         upload_field_storage = resource.pop('upload', None)
         self.clear = resource.pop('clear_upload', None)
 
@@ -307,6 +311,7 @@ class S3ResourceUploader(BaseS3Uploader):
             self.filename = upload_field_storage.filename
             self.filename = munge.munge_filename(self.filename)
             resource['url'] = self.filename
+            self.url = self.filename
             resource['url_type'] = 'upload'
             resource['last_modified'] = datetime.datetime.utcnow()
 
@@ -350,9 +355,10 @@ class S3ResourceUploader(BaseS3Uploader):
             old_resource = model.Session.query(model.Resource) \
                 .get(resource['id'])
             self.old_filename = old_resource.url
+            self.url = self.old_filename
             resource['url_type'] = ''
 
-    def get_path(self, id, filename):
+    def get_path(self, id, filename=None):
         '''Return the key used for this resource in S3.
 
         Keys are in the form:
@@ -361,6 +367,11 @@ class S3ResourceUploader(BaseS3Uploader):
         e.g.:
         my_storage_path/resources/165900ba-3c60-43c5-9e9c-9f8acd0aa93f/data.csv
         '''
+        # CKAN 2.11 download view calls get_path(resource_id) without filename.
+        if filename is None:
+            filename = os.path.basename(self.url or '')
+            filename = munge.munge_filename(filename)
+
         directory = self.get_directory(id, self.storage_path)
         filepath = os.path.join(directory, filename)
         return filepath
